@@ -22,7 +22,7 @@
   "keywords": ["email", "brevo", "ses", "smtp", "cache", "redis", "queue", "logger", "utilities"],
   "author": "xeplr",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/xeplr/xeplr" },
+  "repository": { "type": "git", "url": "https://github.com/Xeplr/xeplr-utils" },
   "publishConfig": { "access": "public" },
   "dependencies": {
     "ioredis": "^5.6.1",
