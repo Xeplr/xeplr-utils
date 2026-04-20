@@ -1,0 +1,40 @@
+{
+  "name": "@xeplr/utils",
+  "version": "1.0.0",
+  "description": "Utility functions: email (SMTP, AWS SES, Azure, Brevo), cache, queue, logging client, and helpers",
+  "main": "index.js",
+  "files": ["index.js", "lib/", "isomorphic/"],
+  "exports": {
+    ".": "./index.js",
+    "./isomorphic": "./isomorphic/index.js",
+    "./isomorphic/crypto": "./isomorphic/crypto.js",
+    "./isomorphic/countries": "./isomorphic/countries.js",
+    "./isomorphic/states": "./isomorphic/states.js",
+    "./lib/cache": "./lib/cache.js",
+    "./lib/email": "./lib/email.js",
+    "./lib/fileUploader": "./lib/fileUploader.js",
+    "./lib/helpers": "./lib/helpers.js",
+    "./lib/logger": "./lib/logger.js",
+    "./lib/queue": "./lib/queue.js",
+    "./lib/rateLimiter": "./lib/rateLimiter.js",
+    "./lib/response": "./lib/response.js"
+  },
+  "keywords": ["email", "brevo", "ses", "smtp", "cache", "redis", "queue", "logger", "utilities"],
+  "author": "xeplr",
+  "license": "MIT",
+  "repository": { "type": "git", "url": "https://github.com/xeplr/xeplr" },
+  "publishConfig": { "access": "public" },
+  "dependencies": {
+    "ioredis": "^5.6.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.2"
+  },
+  "peerDependencies": {
+    "@aws-sdk/client-ses": "^3.0.0",
+    "@azure/communication-email": "^1.0.0"
+  },
+  "peerDependenciesMeta": {
+    "@aws-sdk/client-ses": { "optional": true },
+    "@azure/communication-email": { "optional": true }
+  }
+}
