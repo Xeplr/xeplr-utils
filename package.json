@@ -1,9 +1,13 @@
 {
   "name": "@xeplr/utils",
-  "version": "1.0.0",
+  "version": "1.0.1",
   "description": "Utility functions: email (SMTP, AWS SES, Azure, Brevo), cache, queue, logging client, and helpers",
   "main": "index.js",
-  "files": ["index.js", "lib/", "isomorphic/"],
+  "files": [
+    "index.js",
+    "lib/",
+    "isomorphic/"
+  ],
   "exports": {
     ".": "./index.js",
     "./isomorphic": "./isomorphic/index.js",
@@ -21,24 +25,49 @@
     "./lib/response": "./lib/response.js",
     "./lib/sms": "./lib/sms.js"
   },
-  "keywords": ["email", "brevo", "ses", "smtp", "cache", "redis", "queue", "logger", "utilities"],
+  "keywords": [
+    "email",
+    "brevo",
+    "ses",
+    "smtp",
+    "cache",
+    "redis",
+    "queue",
+    "logger",
+    "utilities"
+  ],
   "author": "xeplr",
   "license": "MIT",
-  "repository": { "type": "git", "url": "https://github.com/Xeplr/xeplr-utils" },
-  "publishConfig": { "access": "public" },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Xeplr/xeplr-utils"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
   "dependencies": {},
   "peerDependencies": {
-    "@aws-sdk/client-ses":         "^3.0.0",
-    "@azure/communication-email":  "^1.0.0",
-    "ioredis":                     "^5.6.1",
-    "multer":                      "^1.4.5-lts.1",
-    "nodemailer":                  "^8.0.2"
+    "@aws-sdk/client-ses": "^3.0.0",
+    "@azure/communication-email": "^1.0.0",
+    "ioredis": "^5.6.1",
+    "multer": "^1.4.5-lts.1",
+    "nodemailer": "^8.0.2"
   },
   "peerDependenciesMeta": {
-    "@aws-sdk/client-ses":         { "optional": true },
-    "@azure/communication-email":  { "optional": true },
-    "ioredis":                     { "optional": true },
-    "multer":                      { "optional": true },
-    "nodemailer":                  { "optional": true }
+    "@aws-sdk/client-ses": {
+      "optional": true
+    },
+    "@azure/communication-email": {
+      "optional": true
+    },
+    "ioredis": {
+      "optional": true
+    },
+    "multer": {
+      "optional": true
+    },
+    "nodemailer": {
+      "optional": true
+    }
   }
 }
