@@ -120,4 +120,63 @@ async function decrypt(encrypted, key) {
   return new TextDecoder().decode(decrypted);
 }
 
-module.exports = { encrypt, decrypt };
+/**
+ * Same as encrypt(), but returns the salt separately instead of packing it
+ * into the payload — for callers that store salt in its own column/field
+ * (e.g. to keep the ciphertext opaque even to something inspecting schema,
+ * or to swap in a different encryption backend later that takes salt as an
+ * explicit input rather than embedding it).
+ *
+ * @param {string} plaintext
+ * @param {string} key - Passphrase
+ * @param {string} [salt] - Base64 salt to reuse (e.g. rotating the ciphertext
+ *   without rotating the salt). Omit to generate a new one.
+ * @returns {Promise<{salt: string, ciphertext: string}>} both base64
+ */
+async function encryptSplit(plaintext, key, salt) {
+  var saltBytes = salt ? fromBase64(salt) : new Uint8Array(16);
+  if (!salt) getRandomValues(saltBytes);
+  var iv = new Uint8Array(12);
+  getRandomValues(iv);
+
+  var cryptoKey = await deriveKey(key, saltBytes);
+  var enc = new TextEncoder();
+  var ciphertext = await getSubtle().encrypt(
+    { name: 'AES-GCM', iv: iv },
+    cryptoKey,
+    enc.encode(plaintext)
+  );
+
+  // Pack: iv (12) + ciphertext — salt travels separately.
+  var packed = new Uint8Array(12 + ciphertext.byteLength);
+  packed.set(iv, 0);
+  packed.set(new Uint8Array(ciphertext), 12);
+
+  return { salt: toBase64(saltBytes), ciphertext: toBase64(packed) };
+}
+
+/**
+ * Counterpart to encryptSplit() — salt passed in explicitly rather than read
+ * from the payload.
+ *
+ * @param {string} ciphertext - Base64 payload from encryptSplit()
+ * @param {string} key - Passphrase
+ * @param {string} salt - Base64 salt from encryptSplit()
+ * @returns {Promise<string>} Decrypted plaintext
+ */
+async function decryptSplit(ciphertext, key, salt) {
+  var packed = fromBase64(ciphertext);
+  var iv = packed.slice(0, 12);
+  var data = packed.slice(12);
+
+  var cryptoKey = await deriveKey(key, fromBase64(salt));
+  var decrypted = await getSubtle().decrypt(
+    { name: 'AES-GCM', iv: iv },
+    cryptoKey,
+    data
+  );
+
+  return new TextDecoder().decode(decrypted);
+}
+
+module.exports = { encrypt, decrypt, encryptSplit, decryptSplit };
