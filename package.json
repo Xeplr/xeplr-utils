@@ -69,5 +69,8 @@
     "nodemailer": {
       "optional": true
     }
+  },
+  "scripts": {
+    "test": "node --test test/*.test.js"
   }
 }
