@@ -1,6 +1,6 @@
 {
   "name": "@xeplr/utils",
-  "version": "1.0.1",
+  "version": "1.0.2",
   "description": "Utility functions: email (SMTP, AWS SES, Azure, Brevo), cache, queue, logging client, and helpers",
   "main": "index.js",
   "files": [
