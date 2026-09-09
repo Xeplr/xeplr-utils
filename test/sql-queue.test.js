@@ -210,3 +210,73 @@ test('retry uses configured delay list and eventually succeeds', async function(
   // 3 events: attempts 1, 2, 3 (recoverAt=3)
   assert.strictEqual(events.length, 3);
 });
+
+// A deterministic failure (a NOT NULL violation, say) is dropped on the first
+// attempt rather than retried — see lib/sql-error.js. Two things follow, and
+// both used to be wrong.
+test('deterministic errors bisect immediately instead of waiting out the backoff', async function() {
+  var attempts = [];
+  var q = new SqlQueue({
+    connections: { c: {} },
+    // 5s/15s/45s if this were treated as transient — the test would not finish.
+    retryDelaysMs: [5000, 15000, 45000],
+    maxConsecutiveDrops: 100,
+    executor: async function(item) {
+      attempts.push(item.meta.rows.length);
+      var err = new Error('null value in column "amount" violates not-null constraint');
+      err.code = '23502';                  // postgres SQLSTATE: not_null_violation
+      throw err;
+    }
+  });
+  var started = Date.now();
+  await q.addToQueue({
+    movementId: 'm1', connection: 'c',
+    meta: { rows: [1, 2, 3, 4], rowCount: 4, rowsToSql: function(r) { return 'INSERT ' + r.length; } }
+  });
+  await q.drain();
+  q.stop();
+
+  assert.ok(Date.now() - started < 3000, 'must not sit in the retry backoff for a verdict it already has');
+  assert.equal(q.stats('m1').dropped, 4, 'every row accounted for');
+  // 4 → 2+2 → 1+1+1+1, each tried exactly once.
+  assert.deepEqual(attempts.sort(), [1, 1, 1, 1, 2, 2, 4]);
+});
+
+test('drain() returns when items arrive after an abort', async function() {
+  // THE HANG THIS GUARDS AGAINST: abort() clears what is queued at that
+  // instant — and the producer feeding the queue does not stop. The uploader's
+  // spool keeps calling addToQueue for every batch it reads (see uploader's
+  // onBatch, which never consults stats().aborted), so items land in an
+  // already-aborted movement. The worker loop skips those, and nothing else
+  // removed them: they sat in _items forever and drain() waited on a queue
+  // that could never empty. The movement had done all the work it was ever
+  // going to do, and hung there with no summary line ever written.
+  //
+  // Seen for real on a 1000-row movement into a NOT NULL column, once
+  // deterministic errors stopped being retried — the old 5s/15s/45s backoff
+  // had been slowing the producer down enough to usually hide it.
+  var q = new SqlQueue({
+    connections: { c: {} },
+    concurrency: 1,
+    executor: async function() { /* never reached — the movement aborts first */ }
+  });
+
+  q.abort('m1', 'test');
+  for (var i = 0; i < 3; i++) {
+    await q.addToQueue({
+      movementId: 'm1', connection: 'c',
+      meta: { rows: [1, 2], rowCount: 2, rowsToSql: function(r) { return 'INSERT ' + r.length; } }
+    });
+  }
+  assert.equal(q.stats().queued, 3, 'the producer did enqueue past the abort');
+
+  var winner = await Promise.race([
+    q.drain().then(function() { return 'drained'; }),
+    sleep(4000).then(function() { return 'timeout'; })
+  ]);
+  q.stop();
+
+  assert.equal(winner, 'drained', 'drain() must not hang on items belonging to an aborted movement');
+  assert.equal(q.stats().queued, 0, 'and they must not be left sitting in the queue');
+  assert.equal(q.stats('m1').dropped, 6, 'those rows are lost — the count has to say so');
+});
