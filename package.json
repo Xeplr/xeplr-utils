@@ -45,7 +45,6 @@
   "publishConfig": {
     "access": "public"
   },
-  "dependencies": {},
   "peerDependencies": {
     "@aws-sdk/client-ses": "^3.0.0",
     "@azure/communication-email": "^1.0.0",
@@ -72,5 +71,8 @@
   },
   "scripts": {
     "test": "node --test test/*.test.js"
+  },
+  "devDependencies": {
+    "nodemailer": "^8.0.11"
   }
 }

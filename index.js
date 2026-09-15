@@ -1,4 +1,4 @@
-const { sendEmail, configureEmail, emailConfigFromEnv, smtpFromEnv, configureFromEnv } = require('./lib/email');
+const { sendEmail, configureEmail, emailConfigFromEnv, smtpFromEnv, configureFromEnv, checkEmail } = require('./lib/email');
 const { configureLogger, createSession, log, closeSession, getSessionLogs } = require('./lib/logger');
 const { generateId, formatDbDateTime, mysqlDateTime } = require('./lib/helpers');
 const { respond, sanitizeError } = require('./lib/response');
@@ -18,6 +18,7 @@ module.exports = {
   emailConfigFromEnv,
   smtpFromEnv,
   configureFromEnv,
+  checkEmail,
 
   // Logger client
   configureLogger,
