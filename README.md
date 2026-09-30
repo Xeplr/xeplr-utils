@@ -4,6 +4,8 @@
 
 Nothing here needs Redis, nodemailer or multer until you use the feature that needs it. Each is an optional peer dependency, loaded on first use.
 
+`nodemailer` is **^10.0.13**. Versions up to 10.0.5 carry high-severity advisories — address parsing that can hang the process, mail delivered to a domain an allow-list should refuse, file and URL access that bypasses `disableFileAccess` — and an app installing 8 or 9 to satisfy an older range inherited them.
+
 ## Install
 
 ```sh
