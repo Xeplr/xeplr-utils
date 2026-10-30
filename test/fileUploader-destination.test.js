@@ -52,6 +52,26 @@ test('a function that refuses refuses the upload, with its own 4xx status; nothi
   } finally { server.close(); }
 });
 
+test('no folder named: the requesting tenant\'s own uploads/, never a shared one; no tenant is refused', async function() {
+  // @xeplr/db's tenancy (its entry also opens connections, which needs this package).
+  var db = require('@xeplr/db/lib/BaseModel');
+  var data = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'fu-data-')));
+  process.env.XEPLR_DATA_DIR = data;
+  db.registerApplication('utils-test');
+  db.registerMTs({ l1: { name: 'companyId', header: 'x-company' } });
+  var app = express();
+  app.use(db.mtMiddleware());
+  app.post('/up', new FileUploader().single('file'), function(req, res) { res.json({ path: req.file.path }); });
+  var server = await new Promise(function(resolve) { var s = app.listen(0, function() { resolve(s); }); });
+  try {
+    var a = await send(server, 'acme');
+    assert.equal(path.dirname(a.body.path), path.join(data, 'utils-test', 'acme', 'uploads'));
+    var none = await send(server, null);
+    assert.equal(none.status, 400);
+    assert.match(none.body.error, /no tenant/);
+  } finally { server.close(); fs.rmSync(data, { recursive: true, force: true }); }
+});
+
 test('a fixed folder still works as before', async function() {
   var dir = path.join(root, 'fixed');
   var server = await serve(new FileUploader({ destination: dir }));
