@@ -348,7 +348,9 @@ app.post('/upload', uploader.single('file'), (req, res) => res.json(req.file))
 // uploader.array('files', 10), uploader.fields([{ name: 'avatar', maxCount: 1 }])
 ```
 
-The destination is created when the uploader is. Files are saved as `generateId()` plus the original extension — never the uploaded name. Errors answer JSON: 401 unauthorised, 413 `File too large`, 400 `File type not allowed: <type>`, 500 otherwise.
+The destination is created when the uploader is. Files are saved as `generateId()` plus the original extension — never the uploaded name. Errors answer JSON: 401 unauthorised, 413 `File too large`, 400 `File type not allowed: <type>`, an error's own 4xx `status` when it carries one, 500 otherwise.
+
+**A folder per request:** `destination` may be a function, `(req) => folder` (or a promise of one). It is asked for each upload and the folder is made if missing, so each file lands where that request belongs: for example, the tenant's own folder, `destination: () => require('@xeplr/actions').dataDir.resolve('uploads')`. A function that throws refuses the upload with its message and status, and nothing is written.
 
 ## Rate limiting
 
