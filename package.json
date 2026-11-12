@@ -23,7 +23,8 @@
     "./lib/queue": "./lib/queue.js",
     "./lib/rateLimiter": "./lib/rateLimiter.js",
     "./lib/response": "./lib/response.js",
-    "./lib/sms": "./lib/sms.js"
+    "./lib/sms": "./lib/sms.js",
+    "./lib/totp": "./lib/totp.js"
   },
   "keywords": [
     "email",

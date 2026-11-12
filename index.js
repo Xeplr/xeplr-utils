@@ -10,6 +10,7 @@ const FileUploader = require('./lib/fileUploader');
 const RateLimiter = require('./lib/rateLimiter');
 const sms = require('./lib/sms');
 const otp = require('./lib/otp');
+const totp = require('./lib/totp');
 
 module.exports = {
   // Email
@@ -56,5 +57,8 @@ module.exports = {
   sms,
 
   // OTP (uses sms above for delivery)
-  otp
+  otp,
+
+  // Authenticator-app codes (RFC 6238): no SMS, no Redis
+  totp
 };

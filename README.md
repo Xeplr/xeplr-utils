@@ -45,6 +45,7 @@ var utils = require('@xeplr/utils')
 | `RateLimiter` | `lib/rateLimiter` | [Rate limiting](#rate-limiting) |
 | `sms` | `lib/sms` | [SMS](#sms) |
 | `otp` | `lib/otp` | [OTP](#otp) |
+| `totp` | `lib/totp` | [Authenticator codes](#authenticator-codes-totp) |
 
 Subpaths, from the package's `exports` map — these and no others:
 
@@ -64,6 +65,7 @@ Subpaths, from the package's `exports` map — these and no others:
 | `@xeplr/utils/lib/rateLimiter` | `RateLimiter` |
 | `@xeplr/utils/lib/response` | `respond`, `sanitizeError` |
 | `@xeplr/utils/lib/sms` | `register`, `setDefault`, `send`, `getProviders` |
+| `@xeplr/utils/lib/totp` | `newSecret`, `codeAt`, `verify`, `otpauthUrl` |
 
 `lib/sql-error` has no subpath: take `classifySqlError` from the root or from `lib/queue`.
 
@@ -367,6 +369,21 @@ app.use('/auth/login', new RateLimiter({
 
 Fixed window per key. Sets `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`; over the limit it answers 429 `{ error: message }` with `Retry-After`. The Redis store keys are `xeplr:ratelimit:<key>` under the cache prefix. **If the limiter itself fails (Redis down), the request is let through** — a broken limiter must not take the API down.
 
+### As a lockout: only failures count
+
+For sign-in, where a right password must never count against anyone, call it yourself instead of mounting `middleware()`:
+
+```js
+var perEmail = new RateLimiter({ windowInSeconds: 900, max: 5 })   // 'memory' or 'redis', as above
+
+var wait = await perEmail.lockedFor('email:' + email)   // seconds left, 0 = may try
+if (wait) return res.status(429).json({ error: 'Try again in ' + Math.ceil(wait / 60) + ' minutes' })
+if (wrong) await perEmail.fail('email:' + email)        // → { count, lockedFor }; the max-th failure locks
+else await perEmail.reset('email:' + email)
+```
+
+The window starts at the first failure; `max` failures within it lock the key until the window ends. **Here a broken store throws** rather than letting the attempt through: a sign-in that cannot count its failures must refuse, not stop counting. With `store: 'redis'` every process shares the count.
+
 ## SMS
 
 A registry of HTTP-API providers described as data — no provider SDKs.
@@ -414,6 +431,21 @@ await otp.verifyOtp('+91…', '482913')    // { success: true } | { success: fal
 The code is stored at `otp:<identifier>` (under the cache prefix) with the TTL as its expiry — no table, no cleanup job. Codes are generated with `crypto.randomInt` and are single-use. `maxAttempts` wrong guesses delete the code; a wrong guess resets the TTL, so the real limit is the attempt count, not the time. Without `provider`, the `sms` default is used.
 
 Because [cache errors are swallowed](#cache-failures-never-throw), with Redis unreachable `requestOtp` still sends the SMS and every `verifyOtp` answers `expired`.
+
+## Authenticator codes (`totp`)
+
+The six digits an authenticator app (Google Authenticator, 1Password, …) shows, RFC 6238: 30-second steps, SHA-1, six digits. Node's `crypto` only: no Redis, no SMS, nothing stored but the secret. Not the same as `otp` above, which sends a code by SMS.
+
+```js
+var { totp } = require('@xeplr/utils')
+
+var secret = totp.newSecret()                                   // base32; keep it with the user
+totp.otpauthUrl(secret, 'ops@xeplr.com', 'Xeplr Monitor')       // otpauth://… for the app, as a QR code or pasted
+totp.verify(secret, '287 082')                                  // true | false — now, or one step either side
+totp.codeAt(secret, Math.floor(Date.now() / 30000))             // the code for a step (tests, scripts)
+```
+
+One step either side is accepted, for a phone whose clock is a little off. The comparison is constant-time. A typed code may contain spaces.
 
 ## Logger client
 
