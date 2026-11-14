@@ -60,3 +60,51 @@ test('a fixed folder still works as before', async function() {
     assert.equal(path.dirname(r.body.path), dir);
   } finally { server.close(); }
 });
+
+// THE FILE'S BYTES ARRIVE LATER THAN THE REQUEST. Multer reads the file as it
+// comes in on the socket; a part that arrives after the middleware has run is
+// read outside the request's async context, so a folder function reading the
+// tenant from AsyncLocalStorage (as @xeplr/db's does) found none and refused
+// the upload — at random, by network timing. Sent here in two pieces with a
+// pause between, so it happens every time; the folder must still be the one
+// the request names.
+test('the folder is asked for while the request is handled, not when the file\'s bytes arrive', async function() {
+  var { AsyncLocalStorage } = require('node:async_hooks');
+  var http = require('http');
+  var als = new AsyncLocalStorage();
+  var uploader = new FileUploader({ destination: function() {
+    var store = als.getStore();
+    if (!store) { var err = new Error('This work runs as no tenant'); err.status = 400; throw err; }
+    return path.join(root, 'als', store.company);
+  } });
+  var app = express();
+  app.use(function(req, res, next) { als.run({ company: req.get('x-company') }, next); });
+  app.post('/up', uploader.single('file'), function(req, res) { res.json({ path: req.file.path }); });
+  var server = await new Promise(function(resolve) { var s = app.listen(0, function() { resolve(s); }); });
+  function slowUpload(company) {
+    var boundary = '----xeplrSlow' + company;
+    var head = '--' + boundary + '\r\n';
+    var rest = 'Content-Disposition: form-data; name="file"; filename="rows.csv"\r\nContent-Type: text/csv\r\n\r\n' +
+      'a,b\n1,2\n\r\n--' + boundary + '--\r\n';
+    return new Promise(function(resolve, reject) {
+      var req = http.request({ port: server.address().port, path: '/up', method: 'POST', headers: {
+        'x-company': company, 'content-type': 'multipart/form-data; boundary=' + boundary,
+        'content-length': Buffer.byteLength(head + rest)
+      } }, function(res) {
+        var body = '';
+        res.on('data', function(c) { body += c; });
+        res.on('end', function() { resolve({ status: res.statusCode, body: JSON.parse(body) }); });
+      });
+      req.on('error', reject);
+      req.write(head);
+      setTimeout(function() { req.end(rest); }, 80);
+    });
+  }
+  try {
+    for (var company of ['acme', 'beta', 'acme']) {
+      var r = await slowUpload(company);
+      assert.equal(r.status, 200, JSON.stringify(r.body));
+      assert.equal(path.dirname(r.body.path), path.join(root, 'als', company));
+    }
+  } finally { server.close(); }
+});
