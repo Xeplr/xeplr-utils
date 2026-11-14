@@ -116,8 +116,17 @@ jobs:
           npm version ${{ inputs.bump || 'patch' }} -m "Release v%s"
           echo "NEW_VERSION=$(node -p "require('./package.json').version")" >> $GITHUB_ENV
 
+      # A release from any branch but main is a MAINTENANCE release of an older
+      # major (1.x while 2.x is current): published under its own dist-tag, so
+      # it never becomes "latest" — npm refuses an older version as latest,
+      # and taking the tag from the newest major would be wrong anyway.
       - name: Publish to npm
-        run: npm publish --access public
+        run: |
+          if [ "$GITHUB_REF_NAME" = "main" ]; then
+            npm publish --access public
+          else
+            npm publish --access public --tag "maint-$(node -p "require('./package.json').version.split('.')[0]")"
+          fi
         env:
           NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
 
