@@ -16,7 +16,7 @@ Uses the global `fetch` (Node 18 or later). Then install the peers for the featu
 
 | feature | peer to install |
 |---|---|
-| `cache`, `otp`, `Queue` / `RateLimiter` with `store: 'redis'`, the email queue with `store: 'redis'` | `ioredis` |
+| `cache`, `otp`, `Queue` / `RateLimiter` / `SharedBudget` with `store: 'redis'`, the email queue with `store: 'redis'` | `ioredis` |
 | email, `provider: 'smtp'` (and `checkEmail` for smtp) | `nodemailer` |
 | email, `provider: 'aws'` | `@aws-sdk/client-ses`; for a message with cc or attachments also `@aws-sdk/client-sesv2` and `nodemailer` |
 | email, `provider: 'azure'` | `@azure/communication-email` |
@@ -43,6 +43,7 @@ var utils = require('@xeplr/utils')
 | `classifySqlError`, `isRetryableSqlError` | `lib/sql-error` | [SQL errors](#sql-errors) |
 | `FileUploader` | `lib/fileUploader` | [File uploads](#file-uploads) |
 | `RateLimiter` | `lib/rateLimiter` | [Rate limiting](#rate-limiting) |
+| `SharedBudget` | `lib/sharedBudget` | [Shared budget](#shared-budget) |
 | `sms` | `lib/sms` | [SMS](#sms) |
 | `otp` | `lib/otp` | [OTP](#otp) |
 
@@ -62,6 +63,7 @@ Subpaths, from the package's `exports` map — these and no others:
 | `@xeplr/utils/lib/otp` | `configureOtp`, `requestOtp`, `verifyOtp` |
 | `@xeplr/utils/lib/queue` | `Queue` (also `.Queue`, `.SqlQueue`, `.classifySqlError`) |
 | `@xeplr/utils/lib/rateLimiter` | `RateLimiter` |
+| `@xeplr/utils/lib/sharedBudget` | `SharedBudget` |
 | `@xeplr/utils/lib/response` | `respond`, `sanitizeError` |
 | `@xeplr/utils/lib/sms` | `register`, `setDefault`, `send`, `getProviders` |
 
@@ -366,6 +368,27 @@ app.use('/auth/login', new RateLimiter({
 ```
 
 Fixed window per key. Sets `X-RateLimit-Limit`, `X-RateLimit-Remaining` and `X-RateLimit-Reset`; over the limit it answers 429 `{ error: message }` with `Retry-After`. The Redis store keys are `xeplr:ratelimit:<key>` under the cache prefix. **If the limiter itself fails (Redis down), the request is let through** — a broken limiter must not take the API down.
+
+## Shared budget
+
+Take part of a total, wait your turn while it is not there, give it back after. Built for the memory of AutoML's Python runs (each run takes the memory it may use, and the server never runs more than the total at once), but it shares out any amount of anything.
+
+```js
+var { SharedBudget } = require('@xeplr/utils')
+var budget = new SharedBudget({ name: 'ml-memory', total: 8192, store: 'redis' })
+
+var lease = await budget.acquire(2048, {
+  signal,                                        // stops the wait (code STOPPED)
+  onWait: ({ amount, inUse, total, ahead }) => log('waiting for memory: ' + inUse + ' of ' + total + ' MB in use, ' + ahead + ' ahead')
+})
+try { /* … */ } finally { await lease.release() }
+```
+
+- **First come, first served.** Whoever asked first is next, so a big request is never starved by small ones that would each have fitted.
+- **`store: 'redis'`** is one budget for every process on the same Redis and `REDIS_PREFIX`, such as several API workers or several servers. The take is one atomic Lua script, so two processes never both take the last of it. **`store: 'memory'`** (the default) is one process's own.
+- **Nothing is held by the dead.** A lease and a place in the queue expire after `leaseSeconds` (default 30) unless renewed, and a live holder renews its own on an unref'd timer. A crashed process's share comes back by itself.
+- **More than the whole total** is refused at once (`BUDGET_TOO_LARGE`): it could never be given. An amount of 0 or less: `BUDGET_BAD_AMOUNT`.
+- `budget.inUse()`: how much every holder has taken right now. `pollMs` (default 500): how often a waiting request asks again.
 
 ## SMS
 
