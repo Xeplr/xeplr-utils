@@ -8,6 +8,7 @@ const Queue = require('./lib/queue');
 const { classifySqlError, isRetryableSqlError } = require('./lib/sql-error');
 const FileUploader = require('./lib/fileUploader');
 const RateLimiter = require('./lib/rateLimiter');
+const SharedBudget = require('./lib/sharedBudget');
 const sms = require('./lib/sms');
 const otp = require('./lib/otp');
 const totp = require('./lib/totp');
@@ -52,6 +53,7 @@ module.exports = {
 
   // Rate Limiter
   RateLimiter,
+  SharedBudget,
 
   // SMS
   sms,
