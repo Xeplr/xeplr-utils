@@ -16,7 +16,7 @@ Uses the global `fetch` (Node 18 or later). Then install the peers for the featu
 
 | feature | peer to install |
 |---|---|
-| `cache`, `otp`, `Queue` / `RateLimiter` / `SharedBudget` with `store: 'redis'`, the email queue with `store: 'redis'` | `ioredis` |
+| `cache`, `otp`, `Queue` / `RateLimiter` / `SharedBudget` / `RunStore` with `store: 'redis'`, the email queue with `store: 'redis'` | `ioredis` |
 | email, `provider: 'smtp'` (and `checkEmail` for smtp) | `nodemailer` |
 | email, `provider: 'aws'` | `@aws-sdk/client-ses`; for a message with cc or attachments also `@aws-sdk/client-sesv2` and `nodemailer` |
 | email, `provider: 'azure'` | `@azure/communication-email` |
@@ -44,6 +44,7 @@ var utils = require('@xeplr/utils')
 | `FileUploader` | `lib/fileUploader` | [File uploads](#file-uploads) |
 | `RateLimiter` | `lib/rateLimiter` | [Rate limiting](#rate-limiting) |
 | `SharedBudget` | `lib/sharedBudget` | [Shared budget](#shared-budget) |
+| `RunStore`, `RunRegistry` | `lib/runStore`, `lib/runRegistry` | [Shared runs](#shared-runs) |
 | `sms` | `lib/sms` | [SMS](#sms) |
 | `otp` | `lib/otp` | [OTP](#otp) |
 
@@ -64,6 +65,8 @@ Subpaths, from the package's `exports` map — these and no others:
 | `@xeplr/utils/lib/queue` | `Queue` (also `.Queue`, `.SqlQueue`, `.classifySqlError`) |
 | `@xeplr/utils/lib/rateLimiter` | `RateLimiter` |
 | `@xeplr/utils/lib/sharedBudget` | `SharedBudget` |
+| `@xeplr/utils/lib/runStore` | `RunStore` |
+| `@xeplr/utils/lib/runRegistry` | `RunRegistry` |
 | `@xeplr/utils/lib/response` | `respond`, `sanitizeError` |
 | `@xeplr/utils/lib/sms` | `register`, `setDefault`, `send`, `getProviders` |
 
@@ -389,6 +392,57 @@ try { /* … */ } finally { await lease.release() }
 - **Nothing is held by the dead.** A lease and a place in the queue expire after `leaseSeconds` (default 30) unless renewed, and a live holder renews its own on an unref'd timer. A crashed process's share comes back by itself.
 - **More than the whole total** is refused at once (`BUDGET_TOO_LARGE`): it could never be given. An amount of 0 or less: `BUDGET_BAD_AMOUNT`.
 - `budget.inUse()`: how much every holder has taken right now. `pollMs` (default 500): how often a waiting request asks again.
+
+## Shared runs
+
+Work that takes minutes (an import, a report query, an export) answers its request at once with a run id, and the page follows the run: how far it has got, its result, ✕. Once an app runs **several processes** (Node's cluster, or several servers behind one address), the follow-up and the ✕ can land on a process that did not start the run. Kept in that one process's memory, the run then reads "not found" and the ✕ does nothing — silently.
+
+`RunRegistry` runs work in the background and lets any process follow it and stop it. The work and its stop switch stay where it runs; what it says about itself is kept in a `RunStore` every process reads, and a stop is sent to whichever process has the work.
+
+```js
+var { RunStore, RunRegistry } = require('@xeplr/utils')
+
+var runs = new RunRegistry({ name: 'imports', store: RunStore.fromEnv(), idPrefix: 'imp_' })
+
+var id = runs.start(async function(onProgress, signal) {
+  // ...the work: onProgress(anything) as it goes, stop when signal.aborted
+  return result
+}, { userId: req.user.id, kind: 'import', timeLimitMs: 60 * 60 * 1000, onChange: function(view) { /* tell the page's event stream */ } })
+
+await runs.view(id, req.user.id)   // { id, kind, status, progress, result, error, startedAt, finishedAt } | null — from any process
+await runs.stop(id, req.user.id)   // true if it was running, wherever it runs
+```
+
+- `status`: `running`, `complete`, `error` or `stopped`. A run is shown to, and stopped by, only the person who started it (`userId`; `7` and `'7'` are the same person).
+- `onChange(view)` hears the run at most once a second while it runs and once when it ends, in the process doing the work — where an app tells its event stream (SSE). The same moments write the shared record.
+- `timeLimitMs` stops it, with `timeLimitMessage` (or "Stopped after N minutes, its time limit.") as its error.
+- A finished run is kept `keepMs` (default an hour) for its page to read the ending.
+- A run's work dies with its process; its record then reads `running` until `RunStore.RUNNING_SECONDS` (2 hours). A run's own time limit should be far shorter. The durable account of the work is the app's own (an import's record), never this.
+
+**Which store — `XEPLR_RUNS_STORE`.** `RunStore.fromEnv()` reads it:
+
+| `XEPLR_RUNS_STORE` | |
+|---|---|
+| `memory` | this process only. Right for one process, and for tests |
+| `redis` | every process using the same Redis and prefix. Uses this package's Redis connection (`REDIS_HOST`, `REDIS_PORT`, `REDIS_PASSWORD`, `REDIS_DB`, `REDIS_PREFIX`, see [Cache](#cache)); needs `ioredis` |
+| unset | `memory` in a single process. **In a cluster worker it refuses to start**, naming the setting: runs in one worker's memory cannot be seen or stopped from the others, and nothing else would say so. Several servers that are not a Node cluster cannot be detected: set `redis` there |
+
+`new RunStore({ store: 'redis', client: function() { return myRedis; }, prefix: 'xruns:v1:my-app' })` uses another Redis client (an app that keeps its runs in its own Redis), and a prefix per app when apps share a Redis.
+
+**`RunStore` on its own** is the lower level, for an app with its own idea of a run:
+
+| | |
+|---|---|
+| `save(record, seconds)` / `load(id)` | what a run says about itself, `record.id` required. A record over `MAX_SHARED_BYTES` (16 MB gzipped) is kept without its `result`, marked `tooLargeToShare` — read elsewhere it says "run it again", never a wrong answer |
+| `requestStop(kind, id, message, extra)` / `onStop(handler)` | a stop heard by every process; the one with the work stops it. `listening()` resolves once this process hears them |
+| `claim(name, seconds)` / `release(name)` | one at a time across processes: `true` if this caller has it, `false` if anyone has |
+| `rememberFinal(userId, event)` / `recentFinals(userId)` | how a run ended, kept a minute, for an event stream that connects late |
+| `getJson(name, fallback)` / `setJson(name, value, seconds)` | a small value of the app's own |
+| `key(...parts)`, `client()`, `available()`, `close()` | |
+
+Redis mode with no client is a no-op (`save` → `false`, `load` → `null`): a single process's behaviour. A Redis error is warned about, never thrown — the work goes on.
+
+Tested in `test/run-registry.test.js`: two real Node processes on one Redis — a run started in one is seen, with its progress, and stopped from the other with its reason; nobody else sees or stops it; a finished run's result is read across; then the memory store, the time limit, `fromEnv`'s refusal in a cluster worker, and the store's records, claims, finals and stop channel.
 
 ## SMS
 
