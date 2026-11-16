@@ -9,6 +9,8 @@ const { classifySqlError, isRetryableSqlError } = require('./lib/sql-error');
 const FileUploader = require('./lib/fileUploader');
 const RateLimiter = require('./lib/rateLimiter');
 const SharedBudget = require('./lib/sharedBudget');
+const RunStore = require('./lib/runStore');
+const RunRegistry = require('./lib/runRegistry');
 const sms = require('./lib/sms');
 const otp = require('./lib/otp');
 const totp = require('./lib/totp');
@@ -54,6 +56,10 @@ module.exports = {
   // Rate Limiter
   RateLimiter,
   SharedBudget,
+
+  // Runs followed and stopped from any process (see README: Shared runs)
+  RunStore,
+  RunRegistry,
 
   // SMS
   sms,
