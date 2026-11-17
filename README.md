@@ -45,6 +45,7 @@ var utils = require('@xeplr/utils')
 | `RateLimiter` | `lib/rateLimiter` | [Rate limiting](#rate-limiting) |
 | `SharedBudget` | `lib/sharedBudget` | [Shared budget](#shared-budget) |
 | `RunStore`, `RunRegistry` | `lib/runStore`, `lib/runRegistry` | [Shared runs](#shared-runs) |
+| `isInternalHost` | `lib/hostGuard` | [Host guard](#host-guard) |
 | `sms` | `lib/sms` | [SMS](#sms) |
 | `otp` | `lib/otp` | [OTP](#otp) |
 
@@ -67,6 +68,7 @@ Subpaths, from the package's `exports` map — these and no others:
 | `@xeplr/utils/lib/sharedBudget` | `SharedBudget` |
 | `@xeplr/utils/lib/runStore` | `RunStore` |
 | `@xeplr/utils/lib/runRegistry` | `RunRegistry` |
+| `@xeplr/utils/lib/hostGuard` | `isInternalHost`, `internalReason` |
 | `@xeplr/utils/lib/response` | `respond`, `sanitizeError` |
 | `@xeplr/utils/lib/sms` | `register`, `setDefault`, `send`, `getProviders` |
 
@@ -443,6 +445,22 @@ await runs.stop(id, req.user.id)   // true if it was running, wherever it runs
 Redis mode with no client is a no-op (`save` → `false`, `load` → `null`): a single process's behaviour. A Redis error is warned about, never thrown — the work goes on.
 
 Tested in `test/run-registry.test.js`: two real Node processes on one Redis — a run started in one is seen, with its progress, and stopped from the other with its reason; nobody else sees or stops it; a finished run's result is read across; then the memory store, the time limit, `fromEnv`'s refusal in a cluster worker, and the store's records, claims, finals and stop channel.
+
+## Host guard
+
+For an app that lets its users name a server to connect to (a database login, an API's base URL) while running on a server of its own. A user who may type any host may type ours: `localhost`, our private address, the cloud's metadata address. They would then reach a database or service that was never theirs, with whatever trust our own machine is given.
+
+```js
+var { isInternalHost } = require('@xeplr/utils')
+var found = await isInternalHost(login.host)   // { internal, resolved, addresses, reason }
+if (found.internal) throw new Error('That server is this one (' + found.reason + ').')
+```
+
+**Internal** means any address the name stands for is this machine (loopback `127.0.0.0/8` and `::1`, `0.0.0.0`/`::`, or an address of one of its own network interfaces), a private network (`10/8`, `172.16/12`, `192.168/16`, `100.64/10`, `fc00::/7`) or link-local (`169.254/16`, where the cloud metadata service answers, and `fe80::/10`). `localhost` and `*.localhost` are internal by name. IPv4 written inside IPv6 (`::ffff:127.0.0.1`) is judged as IPv4.
+
+A name is resolved and is internal if **any** of its addresses is, so a public name that answers `127.0.0.1` is caught. A name that does not resolve gives `resolved: false`, not `internal`: the caller decides, and refusing is the safe choice before a connection. Checking when a connection is saved is not enough on its own, because a public name can later be pointed at `127.0.0.1`. Check again just before connecting. `internalReason(ip)` gives the reason for one address, or `null`.
+
+Tested in `test/host-guard.test.js`, with real DNS: `localhost`, a public name that answers loopback (`localtest.me`), a public name, and one that does not resolve.
 
 ## SMS
 
