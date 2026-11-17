@@ -25,6 +25,7 @@
     "./lib/sharedBudget": "./lib/sharedBudget.js",
     "./lib/runStore": "./lib/runStore.js",
     "./lib/runRegistry": "./lib/runRegistry.js",
+    "./lib/hostGuard": "./lib/hostGuard.js",
     "./lib/response": "./lib/response.js",
     "./lib/sms": "./lib/sms.js",
     "./lib/totp": "./lib/totp.js"
