@@ -63,7 +63,7 @@ Subpaths, from the package's `exports` map — these and no others:
 | `@xeplr/utils/lib/fileUploader` | `FileUploader` |
 | `@xeplr/utils/lib/helpers` | `generateId`, `formatDbDateTime`, `mysqlDateTime` |
 | `@xeplr/utils/lib/logger` | the logger client |
-| `@xeplr/utils/lib/otp` | `configureOtp`, `requestOtp`, `verifyOtp` |
+| `@xeplr/utils/lib/otp` | `configureOtp`, `requestOtp`, `verifyOtp`, `cancelOtp` |
 | `@xeplr/utils/lib/queue` | `Queue` (also `.Queue`, `.SqlQueue`, `.classifySqlError`) |
 | `@xeplr/utils/lib/rateLimiter` | `RateLimiter` |
 | `@xeplr/utils/lib/sharedBudget` | `SharedBudget` |
@@ -520,10 +520,13 @@ otp.configureOtp({ provider: 'twilio', codeLength: 6, ttlSeconds: 300, maxAttemp
   message: (code) => 'Your code is ' + code })
 
 await otp.requestOtp('+91…')             // { sent: true }; throws if the SMS failed
+await otp.requestOtp('login:' + userId, { to: '+91…' })                  // keyed by something else, texted to this number
+await otp.requestOtp('login:' + userId, { send: (code) => mailIt(code) }) // delivered your way — an email, say
+await otp.cancelOtp('login:' + userId)   // forget a code before it is used
 await otp.verifyOtp('+91…', '482913')    // { success: true } | { success: false, reason: 'expired' | 'invalid' | 'too_many_attempts' }
 ```
 
-The code is stored at `otp:<identifier>` (under the cache prefix) with the TTL as its expiry — no table, no cleanup job. Codes are generated with `crypto.randomInt` and are single-use. `maxAttempts` wrong guesses delete the code; a wrong guess resets the TTL, so the real limit is the attempt count, not the time. Without `provider`, the `sms` default is used.
+The code is stored at `otp:<identifier>` (under the cache prefix) with the TTL as its expiry — no table, no cleanup job. Codes are generated with `crypto.randomInt` and are single-use. `maxAttempts` wrong guesses delete the code; a wrong guess resets the TTL, so the real limit is the attempt count, not the time. Without `provider`, the `sms` default is used. With `send`, no SMS is sent: your function delivers the code, and if it throws the code is forgotten and the error passed on — so an emailed code and a texted one expire and count wrong tries alike. Spaces in a typed code are ignored.
 
 Because [cache errors are swallowed](#cache-failures-never-throw), with Redis unreachable `requestOtp` still sends the SMS and every `verifyOtp` answers `expired`.
 
